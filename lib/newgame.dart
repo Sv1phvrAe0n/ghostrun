@@ -1,20 +1,23 @@
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:ghost_run/bottom_screen.dart';
+import 'package:ghost_run/providers/level_params.dart';
+import 'package:ghost_run/providers/score.dart';
 import 'package:ghost_run/visuals/ghost.dart';
 import 'package:ghost_run/visuals/obstacles.dart';
-import 'package:ghost_run/visuals/shroom.dart';
 import 'package:ghost_run/visuals/styles.dart';
 import 'main.dart';
+import 'notifications.dart';
+import 'package:provider/provider.dart';
 
-class NewGame extends StatefulWidget {
-  const NewGame({Key? key}) : super(key: key);
+class NewLevel extends StatefulWidget {
+  const NewLevel({Key? key}) : super(key: key);
 
   @override
-  _HomePageState createState() => _HomePageState();
+  _NewLevelState createState() => _NewLevelState();
 }
 
-class _HomePageState extends State<NewGame> {
+class _NewLevelState extends State<NewLevel> {
 
   static double ghostY = 0;
   double initialPosition = ghostY;
@@ -26,27 +29,23 @@ class _HomePageState extends State<NewGame> {
   double ghostWidth = 0.1;
   bool gameHasStarted = false;
   final ghostX = -0.5;
+  bool passedObstacle = false;
 
-  static List<double> obstacleX = [1.5, 2.15, 2.75, 3.35, 3.95];
-
-  List<List<double>> barrierHeight = [
-    [0.25, 0.85],
-    [0.85, 0.25],
-    [0.75, 0.35],
-    [0.35, 0.75],
-    [0.95, 0.1],
-    [0.1, 0.95],
-  ];
+  List<double> obstacleX = LevelParams().level1Gap;
+  List<List<double>> barrierHeight = LevelParams().level1Size;
 
 
   void startGame() {
     barrierHeight.shuffle();
     gameHasStarted = true;
+
+
     Timer.periodic(Duration(milliseconds: 10), (timer) {
 
       height = gravity * time * time + velocity * time;
       setState(() {
         ghostY = initialPosition - height;
+
       });
 
       if(ghostHits()) {
@@ -56,24 +55,27 @@ class _HomePageState extends State<NewGame> {
       }
 
       moveMap();
+      gotReward();
 
       time+= 0.01;
     });
+
   }
 
   void moveMap() {
     for(int i = 0; i < obstacleX.length; i++) {
-        setState(() {
+
+      setState(() {
           obstacleX[i] -= 0.004;
         });
 
         if(obstacleX[i] < -1.5) {//Луп когда препятствие уходит из экрана
           obstacleX[i] += 3;
           barrierHeight[i].shuffle();
+          passedObstacle = false;
         }
     }
   }
-
 
   void jump() {
     setState(() {
@@ -94,13 +96,25 @@ class _HomePageState extends State<NewGame> {
               && (1 + ghostY <= barrierHeight[i][0] || ghostY >= 1 - barrierHeight[i][1]))
               {
             print('X axis: ${ghostX + ghostWidth*2} = ${obstacleX[i]}'
-                '\nY axis UP: ${1 + ghostY} = barrier height ${barrierHeight[i][0]}'
-                '\nY axis DOWN: ${ghostY} = barrier height ${1 - barrierHeight[i][1]}'
+                '\nY axis UP: ${ghostY} = barrier height ${barrierHeight[i][0]}'
+                '\nY axis DOWN: ${ghostY} = barrier height ${barrierHeight[i][1]}'
             );
             return true;
           }
       }
     return false;
+  }
+
+  gotReward() {
+    for(int i = 0; i < obstacleX.length; i++) {
+      if(obstacleX[i] < ghostX && passedObstacle == false) {
+        passedObstacle = true;
+        context.read<Score>().increment();
+      } else {
+        context.read<Score>().leave();
+      }
+    }
+
   }
 
   void resetGame() {
@@ -109,56 +123,9 @@ class _HomePageState extends State<NewGame> {
       gameHasStarted = false;
       time = 0;
       initialPosition = ghostY;
-      obstacleX = [1.5, 2.15, 2.75, 3.25, 3.95];
+      obstacleX = LevelParams().level1Gap;
     });
-  }
-
-  void _showDialog() {
-    showDialog(
-        context: context,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            backgroundColor: Colors.brown,
-            title: Center(
-              child: Text("GAME OVER", style: mediumAlert,
-              ),
-            ),
-            actions: [
-              TextButton(
-                  style: TextButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.all(Radius.circular(5)),
-                    ),
-                    backgroundColor: Colors.brown.shade300,
-                  ),
-                  onPressed: () {
-                    Navigator.pushNamed(context, '/homepage');
-                    resetGame();
-                  },
-                  child: Container(
-                    padding: EdgeInsets.all(8),
-                    child: Text('EXIT', style: smallAlert),
-                  )
-              ),
-              TextButton(
-                  style: TextButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.all(Radius.circular(5)),
-                    ),
-                    backgroundColor: Colors.brown.shade300,
-                  ),
-                  onPressed:  () {
-                    Navigator.pop(context);
-                    resetGame();
-                    },
-                  child: Container(
-                          padding: EdgeInsets.all(8),
-                          child: Text('PLAY AGAIN', style: smallAlert),
-                        )
-              )
-            ],
-          );
-        });
+    context.read<Score>().reset();
   }
 
   @override
@@ -211,12 +178,73 @@ class _HomePageState extends State<NewGame> {
                   ),
               ),
             ),
-            Expanded(
-              child: Container(color: Colors.brown),
-            )
+            BottomScreen(),
           ],
         ),
       ),
     );
+  }
+
+
+  void _showDialog() {
+    showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            actionsAlignment: MainAxisAlignment.center,
+            backgroundColor: Colors.brown,
+            title: Center(
+              child: Text("GAME OVER", style: mediumAlert,
+              ),
+            ),
+            actions: [
+              Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8.0),
+                    child: Container(
+                      width: double.infinity,
+                      child: TextButton(
+                          style: TextButton.styleFrom(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.all(Radius.circular(5)),
+                            ),
+                            backgroundColor: Colors.brown.shade300,
+                          ),
+                          onPressed: () {
+                            Navigator.pushNamed(context, '/newgame');
+                            resetGame();
+                          },
+                          child: Container(
+                            padding: EdgeInsets.all(8),
+                            child: Text('WATCH AD TO RESTART', style: smallAlert),
+                          )
+                      ),
+                    ),
+                  ),
+                  Container(
+                    width: double.infinity,
+                    child: TextButton(
+                        style: TextButton.styleFrom(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.all(Radius.circular(5)),
+                          ),
+                          backgroundColor: Colors.brown.shade300,
+                        ),
+                        onPressed: () {
+                          Navigator.pushNamed(context, '/homepage');
+                          resetGame();
+                        },
+                        child: Container(
+                          padding: EdgeInsets.all(8),
+                          child: Text('EXIT', style: smallAlert),
+                        )
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          );
+        });
   }
 }
